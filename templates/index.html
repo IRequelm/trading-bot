@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .controls input, .controls select, .controls button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .controls button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background: #0056b3;
+        }
+        .controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .status-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .status-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .equity-chart {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 1px solid #e0e0e0;
+        }
+        .chart-container h2, .equity-chart h2 {
+            margin-top: 0;
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Trading Bot Dashboard</h1>
+            <div class="controls">
+                <select id="symbol">
+                    <optgroup label="Cryptocurrencies">
+                        <option value="BTC-USD">Bitcoin (BTC)</option>
+                        <option value="ETH-USD">Ethereum (ETH)</option>
+                        <option value="BNB-USD">Binance Coin (BNB)</option>
+                        <option value="ADA-USD">Cardano (ADA)</option>
+                        <option value="SOL-USD">Solana (SOL)</option>
+                        <option value="XRP-USD">Ripple (XRP)</option>
+                        <option value="DOT-USD">Polkadot (DOT)</option>
+                        <option value="DOGE-USD">Dogecoin (DOGE)</option>
+                        <option value="AVAX-USD">Avalanche (AVAX)</option>
+                        <option value="MATIC-USD">Polygon (MATIC)</option>
+                    </optgroup>
+                    <optgroup label="US Stocks">
+                        <option value="AAPL">Apple (AAPL)</option>
+                        <option value="MSFT">Microsoft (MSFT)</option>
+                        <option value="GOOGL">Google (GOOGL)</option>
+                        <option value="AMZN">Amazon (AMZN)</option>
+                        <option value="TSLA">Tesla (TSLA)</option>
+                        <option value="META">Meta (META)</option>
+                        <option value="NVDA">NVIDIA (NVDA)</option>
+                        <option value="NFLX">Netflix (NFLX)</option>
+                        <option value="AMD">AMD (AMD)</option>
+                        <option value="INTC">Intel (INTC)</option>
+                    </optgroup>
+                    <optgroup label="BIST100 Stocks">
+                        <option value="AKBNK.IS">Akbank (AKBNK)</option>
+                        <option value="ARCLK.IS">Arçelik (ARCLK)</option>
+                        <option value="ASELS.IS">Aselsan (ASELS)</option>
+                        <option value="BIMAS.IS">BİM (BIMAS)</option>
+                        <option value="EKGYO.IS">Emlak Konut (EKGYO)</option>
+                        <option value="EREGL.IS">Ereğli Demir (EREGL)</option>
+                        <option value="FROTO.IS">Ford Otosan (FROTO)</option>
+                        <option value="GARAN.IS">Garanti BBVA (GARAN)</option>
+                        <option value="HALKB.IS">Halkbank (HALKB)</option>
+                        <option value="ISCTR.IS">İş Bankası (ISCTR)</option>
+                        <option value="KCHOL.IS">Koç Holding (KCHOL)</option>
+                        <option value="KOZAL.IS">Koza Altın (KOZAL)</option>
+                        <option value="PETKM.IS">Petkim (PETKM)</option>
+                        <option value="SAHOL.IS">Sabancı Holding (SAHOL)</option>
+                        <option value="SASA.IS">Sasa Polyester (SASA)</option>
+                        <option value="SISE.IS">Şişe Cam (SISE)</option>
+                        <option value="TAVHL.IS">TAV Havalimanları (TAVHL)</option>
+                        <option value="TCELL.IS">Turkcell (TCELL)</option>
+                        <option value="THYAO.IS">Turkish Airlines (THYAO)</option>
+                        <option value="TUPRS.IS">Tüpraş (TUPRS)</option>
+                    </optgroup>
+                </select>
+                <select id="interval">
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="15m">15 Minutes</option>
+                    <option value="1h" selected>1 Hour</option>
+                    <option value="1d">1 Day</option>
+                </select>
+                <button id="loadDataBtn" onclick="loadData()">Load Data</button>
+                <button id="startBtn" onclick="startBot()">Start Bot</button>
+                <button id="stopBtn" onclick="stopBot()" disabled>Stop Bot</button>
+                <button id="backtestBtn" onclick="runBacktest()" style="background: #ff9800; color: white;">📊 Backtest Strategy</button>
+            </div>
+        </div>
+
+        <div class="status" id="status">
+            <div class="status-card">
+                <h3>Status</h3>
+                <div class="value" id="statusValue">Stopped</div>
+            </div>
+            <div class="status-card">
+                <h3>Symbol</h3>
+                <div class="value" id="symbolValue">-</div>
+            </div>
+            <div class="status-card">
+                <h3>Cash</h3>
+                <div class="value" id="cashValue">$0</div>
+            </div>
+            <div class="status-card">
+                <h3>Position</h3>
+                <div class="value" id="positionValue">0</div>
+            </div>
+            <div class="status-card">
+                <h3>Current Price</h3>
+                <div class="value" id="priceValue">$0</div>
+            </div>
+            <div class="status-card">
+                <h3>Total Equity</h3>
+                <div class="value" id="equityValue">$0</div>
+            </div>
+            <div class="status-card">
+                <h3>Trades</h3>
+                <div class="value" id="tradesValue">0</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>Trading Chart</h2>
+            <div id="tradingChart" style="height: 600px;"></div>
+        </div>
+
+        <!-- Backtest Results Section -->
+        <div id="backtestResults" style="display: none; margin: 20px 0; padding: 20px; background: #f5f5f5; border-radius: 8px; border: 1px solid #e0e0e0;">
+            <h3 style="color: #333; margin-bottom: 15px;">📊 Backtest Results</h3>
+            <div id="backtestContent">
+                <!-- Results will be populated here -->
+            </div>
+        </div>
+
+        <div class="equity-chart">
+            <h2>Equity Curve</h2>
+            <div id="equityChart"></div>
+        </div>
+    </div>
+
+    <script>
+        let statusInterval;
+        let chartInterval;
+
+        async function loadData() {
+            const symbol = document.getElementById('symbol').value || 'BTC-USD';
+            const interval = document.getElementById('interval').value;
+            
+            try {
+                const response = await fetch('/api/load_data', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({symbol, interval})
+                });
+                
+                const result = await response.json();
+                if (result.status === 'data_loaded') {
+                    console.log(`Loaded ${result.bars} bars for ${result.symbol}`);
+                    updateChart();
+                    updateStatus();
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+            }
+        }
+
+        async function startBot() {
+            const symbol = document.getElementById('symbol').value;
+            const interval = document.getElementById('interval').value;
+            
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({symbol, interval})
+                });
+                
+                const result = await response.json();
+                if (result.status === 'started') {
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    startStatusUpdates();
+                }
+            } catch (error) {
+                console.error('Error starting bot:', error);
+            }
+        }
+
+        async function stopBot() {
+            try {
+                await fetch('/api/stop', {method: 'POST'});
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+                stopStatusUpdates();
+            } catch (error) {
+                console.error('Error stopping bot:', error);
+            }
+        }
+
+        function startStatusUpdates() {
+            statusInterval = setInterval(updateStatus, 2000);
+            chartInterval = setInterval(updateChart, 10000);
+            updateStatus();
+            updateChart();
+        }
+
+        function stopStatusUpdates() {
+            if (statusInterval) clearInterval(statusInterval);
+            if (chartInterval) clearInterval(chartInterval);
+        }
+
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const status = await response.json();
+                
+                document.getElementById('statusValue').textContent = status.running ? 'Running' : 'Stopped';
+                document.getElementById('symbolValue').textContent = status.symbol || '-';
+                document.getElementById('cashValue').textContent = '$' + (status.cash || 0).toFixed(2);
+                document.getElementById('positionValue').textContent = status.position || 0;
+                document.getElementById('priceValue').textContent = '$' + (status.current_price || 0).toFixed(2);
+                document.getElementById('equityValue').textContent = '$' + (status.total_equity || 0).toFixed(2);
+                document.getElementById('tradesValue').textContent = status.trades || 0;
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+        }
+
+        async function updateChart() {
+            try {
+                const response = await fetch('/api/chart');
+                const figure = await response.json();
+                
+                console.log('Chart response:', figure);
+                
+                if (figure.error) {
+                    console.error('Chart error:', figure.error);
+                    return;
+                }
+                
+                if (!figure.data || !figure.layout) {
+                    console.error('Invalid chart data:', figure);
+                    return;
+                }
+                
+                console.log('Plotting chart with data:', figure.data.length, 'traces');
+                Plotly.newPlot('tradingChart', figure.data, figure.layout);
+            } catch (error) {
+                console.error('Error updating chart:', error);
+            }
+        }
+
+        async function updateEquityChart() {
+            try {
+                const response = await fetch('/api/equity');
+                const equityData = await response.json();
+                
+                if (equityData.length === 0) return;
+                
+                const trace = {
+                    x: equityData.map(d => new Date(d.timestamp * 1000)),
+                    y: equityData.map(d => d.equity),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Equity',
+                    line: {color: '#007bff'}
+                };
+                
+                const layout = {
+                    title: 'Portfolio Equity Over Time',
+                    xaxis: {title: 'Time'},
+                    yaxis: {title: 'Equity ($)'},
+                    height: 400
+                };
+                
+                Plotly.newPlot('equityChart', [trace], layout);
+            } catch (error) {
+                console.error('Error updating equity chart:', error);
+            }
+        }
+
+        // Initial load
+        updateStatus();
+        updateEquityChart();
+        setInterval(updateEquityChart, 30000); // Update equity every 30 seconds
+        
+        // Auto-load BTC data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('symbol').value = 'BTC-USD';
+            loadData();
+        });
+        
+        // Auto-load data when currency selection changes
+        document.getElementById('symbol').addEventListener('change', function() {
+            loadData();
+        });
+
+        // Backtest function
+        async function runBacktest() {
+            const backtestBtn = document.getElementById('backtestBtn');
+            const backtestResults = document.getElementById('backtestResults');
+            const backtestContent = document.getElementById('backtestContent');
+            
+            // Show loading state
+            backtestBtn.disabled = true;
+            backtestBtn.textContent = '🔄 Running Backtest...';
+            backtestContent.innerHTML = '<p>Running backtest analysis...</p>';
+            backtestResults.style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/backtest');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.results;
+                    
+                    // Create results HTML
+                    const resultsHtml = `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <h4 style="margin: 0; color: #666;">Total Return</h4>
+                                <div style="font-size: 24px; font-weight: bold; color: ${data.total_return >= 0 ? '#26a69a' : '#ef5350'};">
+                                    ${(data.total_return * 100).toFixed(2)}%
+                                </div>
+                            </div>
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <h4 style="margin: 0; color: #666;">Final Equity</h4>
+                                <div style="font-size: 24px; font-weight: bold; color: #333;">
+                                    $${data.final_equity.toLocaleString()}
+                                </div>
+                            </div>
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <h4 style="margin: 0; color: #666;">Win Rate</h4>
+                                <div style="font-size: 24px; font-weight: bold; color: #333;">
+                                    ${(data.win_rate * 100).toFixed(1)}%
+                                </div>
+                            </div>
+                            <div style="background: white; padding: 15px; border-radius: 5px; text-align: center;">
+                                <h4 style="margin: 0; color: #666;">Total Trades</h4>
+                                <div style="font-size: 24px; font-weight: bold; color: #333;">
+                                    ${data.total_trades}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                            <div style="background: white; padding: 10px; border-radius: 5px; text-align: center;">
+                                <div style="font-size: 14px; color: #666;">Sharpe Ratio</div>
+                                <div style="font-size: 18px; font-weight: bold;">${data.sharpe_ratio.toFixed(2)}</div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 5px; text-align: center;">
+                                <div style="font-size: 14px; color: #666;">Max Drawdown</div>
+                                <div style="font-size: 18px; font-weight: bold; color: #ef5350;">${(data.max_drawdown * 100).toFixed(1)}%</div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 5px; text-align: center;">
+                                <div style="font-size: 14px; color: #666;">Profit Factor</div>
+                                <div style="font-size: 18px; font-weight: bold;">${data.profit_factor.toFixed(2)}</div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 5px; text-align: center;">
+                                <div style="font-size: 14px; color: #666;">Avg Win</div>
+                                <div style="font-size: 18px; font-weight: bold; color: #26a69a;">${(data.avg_win * 100).toFixed(1)}%</div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 5px; text-align: center;">
+                                <div style="font-size: 14px; color: #666;">Avg Loss</div>
+                                <div style="font-size: 18px; font-weight: bold; color: #ef5350;">${(data.avg_loss * 100).toFixed(1)}%</div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 5px; text-align: center;">
+                                <div style="font-size: 14px; color: #666;">Period</div>
+                                <div style="font-size: 12px; font-weight: bold;">${data.period}</div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 15px; padding: 10px; background: #e8f5e8; border-radius: 5px; border-left: 4px solid #26a69a;">
+                            <strong>Strategy Performance Summary:</strong><br>
+                            ${data.total_trades > 0 ? 
+                                `The strategy executed ${data.total_trades} trades with a ${(data.win_rate * 100).toFixed(1)}% win rate. 
+                                ${data.total_return >= 0 ? 'Profitable' : 'Unprofitable'} strategy with ${(data.total_return * 100).toFixed(2)}% total return.` :
+                                'No trades were executed during the backtest period. The strategy may be too restrictive or market conditions didn\'t meet the criteria.'
+                            }
+                        </div>
+                    `;
+                    
+                    backtestContent.innerHTML = resultsHtml;
+                } else {
+                    backtestContent.innerHTML = `<p style="color: #ef5350;">Error: ${result.error}</p>`;
+                }
+            } catch (error) {
+                console.error('Backtest error:', error);
+                backtestContent.innerHTML = `<p style="color: #ef5350;">Error running backtest: ${error.message}</p>`;
+            } finally {
+                // Reset button
+                backtestBtn.disabled = false;
+                backtestBtn.textContent = '📊 Backtest Strategy';
+            }
+        }
+    </script>
+</body>
+</html>
