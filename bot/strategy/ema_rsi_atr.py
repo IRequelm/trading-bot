@@ -57,31 +57,40 @@ def compute_ema_rsi_atr_signals(df: pd.DataFrame, fast_ema: int = 12, slow_ema: 
     if pd.isna(current_ema_fast) or pd.isna(current_ema_slow) or pd.isna(current_rsi) or pd.isna(current_atr):
         return EMARSignal(side="hold", rsi=50.0, atr=0.0, confidence=0.0)
     
-    # EMA crossover logic with RSI filter
-    ema_bullish = prev_ema_fast <= prev_ema_slow and current_ema_fast > current_ema_slow
-    ema_bearish = prev_ema_fast >= prev_ema_slow and current_ema_fast < current_ema_slow
+    # EMA trend logic (not just crossover, but trend direction)
+    ema_bullish = current_ema_fast > current_ema_slow  # Fast above slow = bullish trend
+    ema_bearish = current_ema_fast < current_ema_slow  # Fast below slow = bearish trend
+    ema_bullish_cross = prev_ema_fast <= prev_ema_slow and current_ema_fast > current_ema_slow
+    ema_bearish_cross = prev_ema_fast >= prev_ema_slow and current_ema_fast < current_ema_slow
     
-    # RSI conditions (very lenient for testing)
-    rsi_not_overbought = current_rsi < 90  # Very lenient overbought
-    rsi_not_oversold = current_rsi > 10    # Very lenient oversold
-    rsi_bullish = current_rsi > 30 and current_rsi < 85  # Very lenient bullish
-    rsi_bearish = current_rsi < 70 and current_rsi > 15  # Very lenient bearish
+    # RSI conditions (very lenient for more trades)
+    rsi_not_overbought = current_rsi < 85  # Not extremely overbought
+    rsi_not_oversold = current_rsi > 15    # Not extremely oversold
+    rsi_bullish = current_rsi > 40 and current_rsi < 80
+    rsi_bearish = current_rsi < 60 and current_rsi > 20
     
     # Calculate confidence based on RSI position and EMA strength
     ema_strength = abs(current_ema_fast - current_ema_slow) / current_ema_slow
     rsi_confidence = 1 - abs(current_rsi - 50) / 50  # Higher confidence when RSI is closer to 50
     confidence = min(ema_strength * 10, rsi_confidence)  # Combine both factors
     
-    # Generate signals with fallback logic
+    # Generate signals with trend-following logic
+    # Boost confidence on crossover events
+    if ema_bullish_cross:
+        confidence = min(confidence * 2, 1.0)  # Double confidence on crossover
+    elif ema_bearish_cross:
+        confidence = min(confidence * 2, 1.0)
+    
+    # Generate signals based on trend direction (not just crossovers)
     if ema_bullish and rsi_not_overbought:
-        # Even if RSI isn't perfectly bullish, still consider buy if EMA is bullish
-        if rsi_bullish:
-            confidence = max(confidence, 0.5)  # Boost confidence for perfect conditions
+        # Boost confidence if conditions align perfectly
+        if rsi_bullish or ema_bullish_cross:
+            confidence = max(confidence, 0.6)
         return EMARSignal(side="buy", rsi=current_rsi, atr=current_atr, confidence=confidence)
     elif ema_bearish and rsi_not_oversold:
-        # Even if RSI isn't perfectly bearish, still consider sell if EMA is bearish
-        if rsi_bearish:
-            confidence = max(confidence, 0.5)  # Boost confidence for perfect conditions
+        # Boost confidence if conditions align perfectly
+        if rsi_bearish or ema_bearish_cross:
+            confidence = max(confidence, 0.6)
         return EMARSignal(side="sell", rsi=current_rsi, atr=current_atr, confidence=confidence)
     else:
         return EMARSignal(side="hold", rsi=current_rsi, atr=current_atr, confidence=confidence)

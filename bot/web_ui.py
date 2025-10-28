@@ -6,6 +6,8 @@ import json
 from .storage.db import Database
 from .data.yahoo import fetch_candles
 from .strategy.ema_rsi_atr import compute_ema_rsi_atr_signals, calculate_dynamic_stop_loss, calculate_position_size
+from .strategy.simple_ema import compute_simple_ema_signals
+from .strategy.pivot_levels import compute_pivot_levels_signals
 from .backtest.simple_backtester import SimpleBacktester
 from .exchange.paper import PaperExchange
 from .config import settings
@@ -37,7 +39,7 @@ def load_initial_data():
         current_data = fetch_candles(current_symbol, current_interval, 100)
         print(f"Loaded initial data for {current_symbol}: {len(current_data)} bars")
         if not current_data.empty:
-            current_price = float(current_data.iloc[-1]["close"].iloc[0])
+            current_price = float(current_data.iloc[-1]["close"])
             print(f"Current {current_symbol} price: ${current_price:.2f}")
     except Exception as e:
         print(f"Error loading initial data: {e}")
@@ -47,7 +49,7 @@ def load_initial_data():
             current_data = fetch_candles(current_symbol, current_interval, 100)
             print(f"Loaded fallback BTC data: {len(current_data)} bars")
             if not current_data.empty:
-                current_price = float(current_data.iloc[-1]["close"].iloc[0])
+                current_price = float(current_data.iloc[-1]["close"])
                 print(f"Current BTC price: ${current_price:.2f}")
         except Exception as e2:
             print(f"Error loading fallback data: {e2}")
@@ -67,65 +69,40 @@ def run_bot_loop():
                 continue
             
             current_data = df
-            signal = compute_ema_rsi_atr_signals(df, fast_ema=12, slow_ema=26, rsi_period=14, atr_period=14)
             last_row = df.iloc[-1]
-            price = float(last_row["close"].iloc[0])
+            price = float(last_row["close"])
             
-            # Advanced strategy with RSI filter and confidence-based execution
-            executed = False
+            # Use pivot levels strategy
+            # Track current position for the strategy
+            current_position = None
+            if current_exchange.position > 0:
+                current_position = {
+                    'shares': current_exchange.position,
+                    'entry_price': current_exchange.avg_entry_price if current_exchange.avg_entry_price else price,
+                    'entry_level': 'S1'  # We'll track this properly later
+                }
+            
+            signal = compute_pivot_levels_signals(df, current_position=current_position)
             signal_side = str(signal.side) if hasattr(signal, 'side') else "hold"
-            
-            # Only execute if confidence is high enough (avoid weak signals)
-            min_confidence = 0.01  # Very low confidence threshold to allow more signals
-            if hasattr(signal, 'confidence') and signal.confidence < min_confidence:
-                signal_side = "hold"
             
             # Calculate position size based on risk management
             account_balance = current_exchange.cash + (current_exchange.position * price)
-            risk_per_trade = 0.02  # 2% risk per trade
-            position_size = calculate_position_size(account_balance, risk_per_trade, price, 
-                                                  calculate_dynamic_stop_loss(price, signal.atr, signal_side))
             
             if signal_side == "buy" and current_exchange.position <= 0:
+                # Use 70% of available capital for pivot trades
+                position_value = account_balance * 0.70
+                position_size = position_value / price if price > 0 else 0
                 if position_size > 0:
                     current_exchange.market_buy(current_symbol, qty=position_size, price=price)
-                    print(f"BUY signal: Bought {position_size:.2f} {current_symbol} at ${price:.2f} (RSI: {signal.rsi:.1f}, Confidence: {signal.confidence:.2f})")
-                    executed = True
+                    print(f"PIVOT BUY: Bought {position_size:.2f} {current_symbol} at ${price:.2f} (Entry: {signal.entry_level}, Target: {signal.exit_level}, Confidence: {signal.confidence:.2f})")
             elif signal_side == "sell" and current_exchange.position > 0:
-                sell_qty = min(position_size, current_exchange.position)
+                sell_qty = current_exchange.position
                 if sell_qty > 0:
                     current_exchange.market_sell(current_symbol, qty=sell_qty, price=price)
-                    print(f"SELL signal: Sold {sell_qty:.2f} {current_symbol} at ${price:.2f} (RSI: {signal.rsi:.1f}, Confidence: {signal.confidence:.2f})")
-                    executed = True
+                    print(f"PIVOT SELL: Sold {sell_qty:.2f} {current_symbol} at ${price:.2f} (Exit: {signal.exit_level}, Confidence: {signal.confidence:.2f})")
 
-            # Advanced risk management with ATR-based stop-loss
-            if current_exchange.position > 0 and current_exchange.avg_entry_price is not None:
-                entry = current_exchange.avg_entry_price
-                pnl_pct = (price - entry) / entry
-                
-                # ATR-based dynamic stop-loss
-                atr_stop_loss = calculate_dynamic_stop_loss(entry, signal.atr, "buy", atr_multiplier=2.0)
-                atr_take_profit = entry + (signal.atr * 3.0)  # 3x ATR take profit
-                
-                # Check ATR-based stop-loss
-                if price <= atr_stop_loss:
-                    current_exchange.market_sell(current_symbol, qty=current_exchange.position, price=price)
-                    print(f"ATR STOP-LOSS: Sold all at ${price:.2f} (entry ${entry:.2f}, ATR: {signal.atr:.2f})")
-                # Check ATR-based take profit
-                elif price >= atr_take_profit:
-                    take_qty = max(1, current_exchange.position // 2)
-                    current_exchange.market_sell(current_symbol, qty=take_qty, price=price)
-                    print(f"ATR TAKE-PROFIT: Sold {take_qty} at ${price:.2f} (entry ${entry:.2f}, ATR: {signal.atr:.2f})")
-                # Fallback to percentage-based if ATR is too small
-                elif signal.atr < price * 0.001:  # ATR less than 0.1% of price
-                    if pnl_pct <= -0.01:  # -1% stop
-                        current_exchange.market_sell(current_symbol, qty=current_exchange.position, price=price)
-                        print(f"PERCENTAGE STOP-LOSS: Sold all at ${price:.2f} (entry ${entry:.2f})")
-                    elif pnl_pct >= 0.02:  # +2% take profit
-                        take_qty = max(1, current_exchange.position // 2)
-                        current_exchange.market_sell(current_symbol, qty=take_qty, price=price)
-                        print(f"PERCENTAGE TAKE-PROFIT: Sold {take_qty} at ${price:.2f} (entry ${entry:.2f})")
-            
+            # Pivot strategy handles all exits based on resistance levels
+            # No additional stop-loss logic needed
             db.record_equity(timestamp=int(last_row["timestamp"]), equity=current_exchange.cash + current_exchange.position * price)
             time.sleep(5)
         except Exception as e:
@@ -175,7 +152,7 @@ def load_data():
         current_data = fetch_candles(current_symbol, current_interval, 100)
         print(f"Loaded data for {current_symbol}: {len(current_data)} bars")
         if not current_data.empty:
-            current_price = float(current_data.iloc[-1]["close"].iloc[0])
+            current_price = float(current_data.iloc[-1]["close"])
             print(f"Current {current_symbol} price: ${current_price:.2f}")
     except Exception as e:
         print(f"Error loading data: {e}")
@@ -197,7 +174,7 @@ def get_status():
     
     current_price = 0
     if current_data is not None and not current_data.empty:
-        current_price = float(current_data.iloc[-1]["close"].iloc[0])
+        current_price = float(current_data.iloc[-1]["close"])
     
     total_equity = current_exchange.cash + current_exchange.position * current_price
     
@@ -222,7 +199,7 @@ def get_chart():
     # Debug: Print current price
     if not current_data.empty:
         try:
-            current_price = float(current_data.iloc[-1]["close"].iloc[0])
+            current_price = float(current_data.iloc[-1]["close"])
             print(f"Chart API - Current {current_symbol} price: ${current_price:.2f}")
         except Exception:
             pass
@@ -262,25 +239,6 @@ def get_chart():
         increasing_fillcolor='#26a69a',
         decreasing_fillcolor='#ef5350',
         line=dict(width=1)
-    ))
-    
-    # Add EMA lines with better styling
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=ema_fast,
-        mode='lines',
-        name='EMA 12',
-        line=dict(color='#ff9800', width=2),
-        opacity=0.8
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=ema_slow,
-        mode='lines',
-        name='EMA 26',
-        line=dict(color='#2196f3', width=2),
-        opacity=0.8
     ))
     
     # Add volume bars (TradingView style)
@@ -431,13 +389,13 @@ def test_chart():
             "min": float(df['close'].min()),
             "max": float(df['close'].max())
         },
-        "last_price": float(df.iloc[-1]['close'].iloc[0]),
+        "last_price": float(df.iloc[-1]['close']),
         "sample_data": {
-            "open": float(df.iloc[-1]['open'].iloc[0]),
-            "high": float(df.iloc[-1]['high'].iloc[0]),
-            "low": float(df.iloc[-1]['low'].iloc[0]),
-            "close": float(df.iloc[-1]['close'].iloc[0]),
-            "volume": float(df.iloc[-1]['volume'].iloc[0])
+            "open": float(df.iloc[-1]['open']),
+            "high": float(df.iloc[-1]['high']),
+            "low": float(df.iloc[-1]['low']),
+            "close": float(df.iloc[-1]['close']),
+            "volume": float(df.iloc[-1]['volume'])
         }
     })
 
@@ -454,11 +412,12 @@ def get_equity():
 @app.route('/api/backtest')
 def run_backtest():
     """
-    Run backtest on current symbol with EMA+RSI+ATR strategy
+    Run backtest on current symbol with EMA+RSI+ATR strategy (30 days / 1 month)
     """
     try:
-        # Get more historical data for backtesting (last 100 days)
-        df = fetch_candles(symbol=current_symbol, interval=current_interval, lookback=100)
+        # Get historical data for backtesting (use 5m interval for better granularity)
+        # Fetch enough data for pivot calculation (need at least ~200 bars for 5m data)
+        df = fetch_candles(symbol=current_symbol, interval='5m', lookback=200)
         
         if df.empty:
             return jsonify({"error": "No data available for backtesting"})
@@ -470,20 +429,25 @@ def run_backtest():
         return jsonify({
             "success": True,
             "results": {
+                "total_return_pct": round(result.total_return * 100, 2),
                 "total_return": result.total_return,
+                "annual_return_pct": round(result.annual_return * 100, 2),
                 "annual_return": result.annual_return,
-                "sharpe_ratio": result.sharpe_ratio,
+                "final_equity": round(result.final_equity, 2),
+                "sharpe_ratio": round(result.sharpe_ratio, 2),
+                "max_drawdown_pct": round(result.max_drawdown * 100, 2),
                 "max_drawdown": result.max_drawdown,
+                "win_rate_pct": round(result.win_rate * 100, 2),
                 "win_rate": result.win_rate,
                 "total_trades": result.total_trades,
                 "profitable_trades": result.profitable_trades,
                 "losing_trades": result.losing_trades,
-                "avg_win": result.avg_win,
-                "avg_loss": result.avg_loss,
-                "profit_factor": result.profit_factor,
-                "final_equity": 10000 * (1 + result.total_return),
+                "avg_win": round(result.avg_win, 2),
+                "avg_loss": round(result.avg_loss, 2),
+                "profit_factor": round(result.profit_factor, 2),
                 "symbol": current_symbol,
-                "period": f"{df.index[0]} to {df.index[-1]}"
+                "period": f"{df.index[0]} to {df.index[-1]}" if len(df) > 0 else "N/A",
+                "initial_capital": 10000
             }
         })
         
