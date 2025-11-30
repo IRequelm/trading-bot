@@ -82,7 +82,7 @@ def run_bot_loop():
                     'entry_level': 'S1'  # We'll track this properly later
                 }
             
-            signal = compute_pivot_levels_signals(df, current_position=current_position)
+            signal = compute_pivot_levels_signals(df, symbol=current_symbol, current_position=current_position)
             signal_side = str(signal.side) if hasattr(signal, 'side') else "hold"
             
             # Calculate position size based on risk management

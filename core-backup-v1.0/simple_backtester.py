@@ -48,25 +48,10 @@ class SimpleBacktester:
         trades = []
         equity_curve = [self.initial_capital]
         
-        # Track daily entry counts to allow one S2 and one S3 per day
-        daily_entry_counts = {'S2': 0, 'S3': 0}
-        current_day = None
-        
         # Main backtest loop
         for i in range(5, len(df)):  # Start at 5 to ensure enough data for pivot calculation
             current_price = float(df.iloc[i]['close'])
             current_data = df.iloc[:i+1]
-            
-            # Detect day change by comparing date (assuming datetime index)
-            try:
-                bar_date = current_data.index[-1].date() if hasattr(current_data.index[-1], 'date') else None
-                if bar_date and bar_date != current_day:
-                    # Reset daily counters on new day
-                    if current_day is not None:
-                        daily_entry_counts = {'S2': 0, 'S3': 0}
-                    current_day = bar_date
-            except:
-                pass  # Fallback if date parsing fails
             
             # Check for exit signals on existing positions
             for idx_pos in list(range(len(positions))):
@@ -146,8 +131,8 @@ class SimpleBacktester:
                         positions.pop(idx_pos)
                         break
 
-            # Check for new entry opportunities (allow one S2/S3 per day)
-            signal = compute_pivot_levels_signals(current_data, symbol=symbol, current_position=None, existing_positions=positions, daily_entry_counts=daily_entry_counts)
+            # Check for new entry opportunities (allow entries while carrying if cash permits)
+            signal = compute_pivot_levels_signals(current_data, symbol=symbol, current_position=None)
             if signal.side == "buy" and signal.entry_level in ('S2','S3'):
                 # Use 1/3 of current cash (not equity)
                 position_value = cash / 3.0
@@ -171,8 +156,6 @@ class SimpleBacktester:
                         'entry_level': signal.entry_level,
                         'exit_level': signal.exit_level
                     })
-                    # Increment daily counter for this entry level
-                    daily_entry_counts[signal.entry_level] += 1
                     print(f"BUY at {i}: {shares:.2f} at ${current_price:.2f} (Entry: {signal.entry_level})")
             
             # Calculate current equity
@@ -202,7 +185,7 @@ class SimpleBacktester:
                     for k in range(len(df), len(extended_df)):
                         current_price = float(extended_df.iloc[k]['close'])
                         current_data = extended_df.iloc[:k+1]
-                        signal = compute_pivot_levels_signals(current_data, symbol=symbol, current_position=None, existing_positions=positions)
+                        signal = compute_pivot_levels_signals(current_data, symbol=symbol, current_position=None)
                         
                         if signal.side == "sell" and signal.exit_level == 'R2':
                             if not pos['partial_done']:
@@ -261,7 +244,7 @@ class SimpleBacktester:
                     for k in range(len(df), len(extended_df)):
                         current_price = float(extended_df.iloc[k]['close'])
                         current_data = extended_df.iloc[:k+1]
-                        signal = compute_pivot_levels_signals(current_data, symbol=symbol, current_position=None, existing_positions=positions)
+                        signal = compute_pivot_levels_signals(current_data, symbol=symbol, current_position=None)
                         
                         if signal.side == "sell" and signal.exit_level == 'R3':
                             sell_shares = pos['shares']
@@ -305,17 +288,17 @@ class SimpleBacktester:
         days = len(df) / (24 * 12)  # Assuming 5m intervals, 24*12 = 288 bars per day
         annual_return = (1 + total_return) ** (365 / days) - 1 if days > 0 else 0
         
-        # Include ALL trades (including FINAL exits) for win/loss calculation
-        all_trades = trades
+        # Filter out FINAL trades for win/loss calculation
+        regular_trades = [t for t in trades if t['type'] != 'FINAL']
         
         # Calculate trade statistics
-        total_trades = len(all_trades)
+        total_trades = len(regular_trades)
         if total_trades == 0:
             return self._empty_result()
         
-        # Separate buy and sell trades (including FINAL)
-        buy_trades = [t for t in all_trades if t['type'] == 'BUY']
-        sell_trades = [t for t in all_trades if t['type'] in ['SELL', 'FINAL']]
+        # Separate buy and sell trades
+        buy_trades = [t for t in regular_trades if t['type'] == 'BUY']
+        sell_trades = [t for t in regular_trades if t['type'] == 'SELL']
         
         # Match trades and calculate P&L
         trade_pnl = []

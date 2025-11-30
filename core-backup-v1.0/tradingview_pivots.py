@@ -1,14 +1,10 @@
 import pandas as pd
 from typing import Dict
-import yfinance as yf
-
-# Cache for daily OHLC to avoid repeated yfinance calls
-_daily_ohlc_cache = {}
 
 def calculate_camarilla_pivots(high: float, low: float, close: float, open: float = None) -> Dict[str, float]:
     """
     Calculate Camarilla Pivot Points
-    Formula: PP = Previous day's close (as TradingView does)
+    Formula: PP = (H + L + C) / 3
     
     Camarilla Supports/Resistances use different formulas:
     R4 = C + (H - L) * 1.1/2
@@ -20,8 +16,7 @@ def calculate_camarilla_pivots(high: float, low: float, close: float, open: floa
     S3 = C - (H - L) * 1.1/4
     S4 = C - (H - L) * 1.1/2
     """
-    # In Camarilla, pivot is typically the previous day's close
-    pivot = close
+    pivot = (high + low + close) / 3
     range_val = high - low
     
     # Camarilla formulas
@@ -50,56 +45,37 @@ def calculate_camarilla_pivots(high: float, low: float, close: float, open: floa
 def get_daily_ohlc(df: pd.DataFrame, symbol: str = "") -> Dict[str, float]:
     """
     Get YESTERDAY's OHLC for pivot calculation (as TradingView does)
-    For stocks: Use previous trading day's OHLC from daily data
+    For stocks: Use previous trading day's OHLC
     For crypto: Use last 24h OHLC
-    Caches results to avoid repeated yfinance calls
     """
-    # Check cache first
-    if symbol in _daily_ohlc_cache:
-        return _daily_ohlc_cache[symbol]
-    
     is_crypto = any(x in symbol.upper() for x in ['BTC', 'ETH', 'CRYPTO', '-USD'])
     
     if is_crypto:
         # Crypto: use last 288 bars (24h for 5m data)
         recent_data = df.tail(288)
-        if len(recent_data) < 50:
-            return {}
-        
-        high = float(recent_data['high'].max())
-        low = float(recent_data['low'].min())
-        close = float(recent_data['close'].iloc[-1])
     else:
-        # Stocks: Fetch actual daily data for previous day
-        try:
-            # Get daily data for the last 5 days to ensure we have yesterday
-            ticker = yf.Ticker(symbol)
-            daily_data = ticker.history(period="5d", interval="1d")
-            
-            if len(daily_data) < 2:
-                return {}
-            
-            # Use the third-to-last day (to match TradingView's calculation)
-            # This seems to be the correct day for ASELS pivot calculation
-            yesterday_data = daily_data.iloc[-3]
-            
-            high = float(yesterday_data['High'])
-            low = float(yesterday_data['Low'])
-            close = float(yesterday_data['Close'])
-        except Exception as e:
-            print(f"Error fetching daily data for {symbol}: {e}")
-            return {}
+        # Stocks: Need YESTERDAY's data
+        # For BIST (ASELS), trading is 10:00-17:00
+        # Get the first half of last 300 bars as "yesterday"
+        recent_data = df.tail(300)
+        if len(recent_data) > 200:
+            # Split: first half = yesterday, second half = today
+            mid_point = len(recent_data) // 2
+            recent_data = recent_data.iloc[:mid_point]  # Yesterday's data
     
-    result = {
+    if len(recent_data) < 50:
+        return {}
+    
+    # Get OHLC from the selected period (yesterday for stocks)
+    high = float(recent_data['high'].max())
+    low = float(recent_data['low'].min())
+    close = float(recent_data['close'].iloc[-1])
+    
+    return {
         'high': high,
         'low': low,
         'close': close
     }
-    
-    # Cache the result
-    _daily_ohlc_cache[symbol] = result
-    
-    return result
 
 
 def calculate_daily_pivot_levels(df: pd.DataFrame, symbol: str = "") -> Dict[str, float]:

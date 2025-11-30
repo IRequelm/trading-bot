@@ -20,7 +20,7 @@ class PivotLevelsSignal:
     s4: Optional[float] = None
 
 
-def compute_pivot_levels_signals(df: pd.DataFrame, symbol: str = "", current_position: dict = None, existing_positions: list = None, daily_entry_counts: dict = None) -> PivotLevelsSignal:
+def compute_pivot_levels_signals(df: pd.DataFrame, symbol: str = "", current_position: dict = None) -> PivotLevelsSignal:
     """
     Day-trading pivot strategy using Camarilla:
     - Buy at S3→R1, S2→R2, S1→R3 as price touches each support
@@ -39,18 +39,7 @@ def compute_pivot_levels_signals(df: pd.DataFrame, symbol: str = "", current_pos
     s1, s2, s3, s4 = levels['s1'], levels['s2'], levels['s3'], levels['s4']
     r1, r2, r3, r4 = levels['r1'], levels['r2'], levels['r3'], levels['r4']
     current_price = float(df.iloc[-1]['close'])
-    # Symbol-aware thresholds (tighter for crypto, slightly wider for stocks; S3 < S2)
-    def get_thresholds(sym: str) -> Dict[str, float]:
-        # Treat symbols ending with '-USD' as crypto
-        is_crypto = sym.endswith('-USD')
-        if is_crypto:
-            return {"s3": 0.003, "s2": 0.002}  # keep crypto unchanged
-        # Stocks/ETFs: slightly wider thresholds to increase triggers
-        return {"s3": 0.009, "s2": 0.006}
-
-    th = get_thresholds(symbol or "")
-    s3_threshold = th["s3"]
-    s2_threshold = th["s2"]
+    threshold_pct = 0.005  # 0.5% threshold - tighter to catch bounce point
     
     # Get previous price to detect cross
     prev_price = float(df.iloc[-2]['close']) if len(df) > 1 else current_price
@@ -78,16 +67,12 @@ def compute_pivot_levels_signals(df: pd.DataFrame, symbol: str = "", current_pos
     # Only buy when price crosses INTO the support zone from above
     # Priority: S3 > S2 > S1 (most profitable trades first)
     
-    # Check daily entry limits (allow one S2/S3 per day)
-    s3_entries_today = daily_entry_counts.get('S3', 0) if daily_entry_counts else 0
-    s2_entries_today = daily_entry_counts.get('S2', 0) if daily_entry_counts else 0
-    
-    # Buy at S3 (target R2) - detect cross into S3 zone (once per day)
-    if s3 and s3_entries_today == 0 and prev_price > s3 * (1 + s3_threshold) and current_price <= s3 * (1 + s3_threshold):
+    # Buy at S3 (target R2) - detect cross into S3 zone
+    if s3 and prev_price > s3 * (1 + threshold_pct) and current_price <= s3 * (1 + threshold_pct):
         return PivotLevelsSignal(side="buy", confidence=0.95, entry_level='S3', exit_level='R2', pivot=pivot, r1=r1, r2=r2, r3=r3, r4=r4, s1=s1, s2=s2, s3=s3, s4=s4)
     
-    # Buy at S2 (target R3) - detect cross into S2 zone (once per day)
-    elif s2 and s2_entries_today == 0 and prev_price > s2 * (1 + s2_threshold) and current_price <= s2 * (1 + s2_threshold):
+    # Buy at S2 (target R3) - detect cross into S2 zone
+    elif s2 and prev_price > s2 * (1 + threshold_pct) and current_price <= s2 * (1 + threshold_pct):
         return PivotLevelsSignal(side="buy", confidence=0.85, entry_level='S2', exit_level='R3', pivot=pivot, r1=r1, r2=r2, r3=r3, r4=r4, s1=s1, s2=s2, s3=s3, s4=s4)
     
     # No S1 entries (tighten to S2/S3 only)
